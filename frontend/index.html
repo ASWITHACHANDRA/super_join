@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FactLens — Cross-Document Fact Analysis</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242736;
+      --border: #2e3248;
+      --accent: #6c8aff;
+      --accent2: #a78bfa;
+      --green: #22c55e;
+      --red: #ef4444;
+      --orange: #f97316;
+      --yellow: #eab308;
+      --text: #e2e8f0;
+      --muted: #8892a4;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.6; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Layout */
+    .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+    .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    .main { padding: 28px; overflow-x: hidden; }
+
+    /* Logo */
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; color: var(--accent); }
+    .logo span { font-size: 28px; }
+
+    /* Nav */
+    .nav-section { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius); cursor: pointer; transition: background 0.15s; color: var(--text); }
+    .nav-item:hover, .nav-item.active { background: var(--surface2); }
+    .nav-item.active { color: var(--accent); }
+
+    /* Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+    .card-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+
+    /* Upload */
+    .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 20px; text-align: center; cursor: pointer; transition: border-color 0.15s; }
+    .drop-zone.dragover, .drop-zone:hover { border-color: var(--accent); }
+    .drop-zone .icon { font-size: 40px; margin-bottom: 10px; }
+    .drop-zone p { color: var(--muted); }
+    .drop-zone .hint { font-size: 12px; margin-top: 4px; }
+    #fileInput { display: none; }
+
+    /* Buttons */
+    .btn { padding: 8px 18px; border-radius: var(--radius); border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity 0.15s; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status badges */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .badge-pending { background: #2d2a1a; color: var(--yellow); }
+    .badge-processing { background: #1a2740; color: var(--accent); }
+    .badge-done { background: #142514; color: var(--green); }
+    .badge-error { background: #2a1414; color: var(--red); }
+
+    .badge-corroborates { background: #142514; color: var(--green); }
+    .badge-contradicts { background: #2a1414; color: var(--red); }
+    .badge-reconcilable { background: #2d2a1a; color: var(--yellow); }
+    .badge-unrelated { background: var(--surface2); color: var(--muted); }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
+    .stat-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+    .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 8px 12px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:hover td { background: var(--surface2); }
+    .claim-text { max-width: 380px; }
+    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+
+    /* Fact detail panel */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+    .panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .panel-title { font-size: 18px; font-weight: 600; line-height: 1.4; }
+    .meta-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; }
+    .meta-item { display: flex; flex-direction: column; gap: 2px; }
+    .meta-label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+    .meta-value { font-size: 13px; }
+    .quote-box { background: var(--bg); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; font-style: italic; color: var(--muted); font-size: 13px; margin: 12px 0; line-height: 1.7; }
+    .notes-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--yellow); margin: 8px 0; }
+
+    /* Relationship cards */
+    .rel-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+    .rel-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .rel-explanation { color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 10px; }
+    .rel-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .rel-fact-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+    .rel-fact-source { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .rel-fact-claim { font-size: 13px; line-height: 1.4; margin-bottom: 6px; }
+    .rel-fact-quote { font-size: 12px; font-style: italic; color: var(--muted); border-left: 2px solid var(--border); padding-left: 8px; }
+
+    /* Filter bar */
+    .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+    .filter-input { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 12px; color: var(--text); font-size: 13px; min-width: 180px; }
+    .filter-input:focus { outline: none; border-color: var(--accent); }
+    select.filter-input { cursor: pointer; }
+
+    /* Upload status list */
+    .doc-list { display: flex; flex-direction: column; gap: 10px; }
+    .doc-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: border-color 0.15s; }
+    .doc-item:hover { border-color: var(--accent); }
+    .doc-info { flex: 1; }
+    .doc-name { font-weight: 600; }
+    .doc-meta { font-size: 12px; color: var(--muted); }
+
+    /* Progress */
+    .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; animation: shimmer 1.5s infinite; }
+    @keyframes shimmer { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    /* Spinner */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Tags */
+    .tag { display: inline-block; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; font-size: 11px; color: var(--muted); margin: 2px; }
+
+    /* Toast */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
+    .toast { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; font-size: 13px; max-width: 320px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    .toast.success { border-color: var(--green); color: var(--green); }
+    .toast.error { border-color: var(--red); color: var(--red); }
+
+    /* Empty states */
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+
+    /* Section headers */
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .section-title { font-size: 20px; font-weight: 700; }
+    .section-count { font-size: 13px; color: var(--muted); }
+
+    /* Pagination */
+    .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; justify-content: flex-end; }
+    .page-btn { padding: 6px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; font-size: 12px; }
+    .page-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { height: auto; position: static; }
+      .rel-facts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo"><span>🔍</span> FactLens</div>
+
+    <div>
+      <div class="nav-section">Navigation</div>
+      <div class="nav-item active" onclick="navigate('dashboard')">📊 Dashboard</div>
+      <div class="nav-item" onclick="navigate('upload')">📤 Upload PDF</div>
+      <div class="nav-item" onclick="navigate('facts')">📋 Browse Facts</div>
+      <div class="nav-item" onclick="navigate('relationships')">🔗 Relationships</div>
+    </div>
+
+    <div>
+      <div class="nav-section">Filter by Relation</div>
+      <div class="nav-item" onclick="navigateToRelType('CORROBORATES')"><span class="badge badge-corroborates">✓</span> Corroborates</div>
+      <div class="nav-item" onclick="navigateToRelType('CONTRADICTS')"><span class="badge badge-contradicts">✗</span> Contradicts</div>
+      <div class="nav-item" onclick="navigateToRelType('RECONCILABLE')"><span class="badge badge-reconcilable">~</span> Reconcilable</div>
+    </div>
+
+    <div style="margin-top: auto;">
+      <div class="nav-item" onclick="window.open('/docs', '_blank')">📖 API Docs</div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main" id="mainContent">
+    <!-- Content injected by JS -->
+  </main>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API = '';  // Same origin
+let currentPage = 'dashboard';
+let pollingIntervals = {};
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+
+function navigate(page, params = {}) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(el => {
+    if (el.textContent.toLowerCase().includes(page.replace('_', ' '))) {
+      el.classList.add('active');
+    }
+  });
+  
+  const content = document.getElementById('mainContent');
+  content.innerHTML = '<div class="empty"><div class="spinner"></div><p style="margin-top:12px">Loading...</p></div>';
+  
+  switch(page) {
+    case 'dashboard': renderDashboard(); break;
+    case 'upload': renderUpload(); break;
+    case 'facts': renderFacts(params); break;
+    case 'relationships': renderRelationships(params); break;
+    case 'fact_detail': renderFactDetail(params.factId); break;
+  }
+}
+
+function navigateToRelType(type) {
+  navigate('relationships', { type });
+}
+
+// ── API helpers ─────────────────────────────────────────────────────────────
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, options);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+// ── Toast ───────────────────────────────────────────────────────────────────
+
+function toast(msg, type = '') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── Badge helpers ────────────────────────────────────────────────────────────
+
+function relBadge(relation) {
+  const cls = `badge badge-${relation.toLowerCase()}`;
+  const icons = { CORROBORATES: '✓', CONTRADICTS: '✗', RECONCILABLE: '~', UNRELATED: '–' };
+  return `<span class="${cls}">${icons[relation] || ''} ${relation}</span>`;
+}
+
+function statusBadge(status) {
+  return `<span class="badge badge-${status}">${status}</span>`;
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+
+async function renderDashboard() {
+  const [stats, docs] = await Promise.all([
+    api('/stats'),
+    api('/documents'),
+  ]);
+
+  const rel = stats.relationship_breakdown;
+  const ftHtml = Object.entries(stats.fact_type_distribution || {})
+    .map(([k,v]) => `<span class="tag">${k}: ${v}</span>`)
+    .join('') || '<span class="tag">none yet</span>';
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="section-header">
+      <div class="section-title">Dashboard</div>
+      <button class="btn btn-primary" onclick="navigate('upload')">+ Upload PDF</button>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-value">${stats.documents}</div><div class="stat-label">Documents</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.facts}</div><div class="stat-label">Facts Extracted</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.relationships}</div><div class="stat-label">Relationships</div></div>
+      <div class="stat-card" style="cursor:pointer" onclick="navigateToRelType('CORROBORATES')"><div class="stat-value" style="color:var(--green)">${rel.corroborates||0}</div><div class="stat-label">Corroborations</div></div>
+      <div class="stat-card" style="cursor:pointer" onclick="navigateToRelType('CONTRADICTS')"><div class="stat-value" style="color:var(--red)">${rel.contradicts||0}</div><div class="stat-label">Contradictions</div></div>
+      <div class="stat-card" style="cursor:pointer" onclick="navigateToRelType('RECONCILABLE')"><div class="stat-value" style="color:var(--yellow)">${rel.reconcilable||0}</div><div class="stat-label">Reconcilable</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Fact Type Distribution (Schema Evolution)</div>
+      <div>${ftHtml}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Documents</div>
+      <div class="doc-list">
+        ${docs.length === 0 ? `<div class="empty"><div class="empty-icon">📄</div><div class="empty-title">No documents yet</div><p>Upload a PDF to get started.</p></div>` :
+          docs.map(d => `
+            <div class="doc-item" onclick="navigate('facts', { documentId: '${d.id}' })">
+              <div style="font-size:28px">📄</div>
+              <div class="doc-info">
+                <div class="doc-name">${esc(d.name)}</div>
+                <div class="doc-meta">${d.page_count||'?'} pages · ${d.fact_count||0} facts · ${d.filename}</div>
+                ${d.status === 'processing' ? `<div class="progress-bar"><div class="progress-fill" style="width:60%"></div></div>` : ''}
+              </div>
+              ${statusBadge(d.status)}
+            </div>
+          `).join('')
+        }
+      </div>
+    </div>
+  `;
+}
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+
+function renderUpload() {
+  document.getElementById('mainContent').innerHTML = `
+    <div class="section-header">
+      <div class="section-title">Upload PDF</div>
+    </div>
+
+    <div class="card">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📤</div>
+        <p>Click or drag & drop a PDF here</p>
+        <p class="hint">Supports any PDF — reports, papers, filings. Max ~200 pages.</p>
+        <input type="file" id="fileInput" accept=".pdf" onchange="handleFileSelect(event)" />
+      </div>
+
+      <div id="uploadForm" style="display:none; margin-top:16px;">
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Display Name (optional)</label>
+          <input type="text" id="docName" class="filter-input" style="width:100%" placeholder="e.g. Economic Survey 2024-25" />
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div id="selectedFile" style="font-size:13px; color:var(--muted);"></div>
+          <button class="btn btn-primary" id="uploadBtn" onclick="doUpload()">Upload & Process</button>
+          <button class="btn btn-secondary" onclick="cancelUpload()">Cancel</button>
+        </div>
+      </div>
+
+      <div id="uploadProgress" style="display:none; margin-top:16px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Processing Queue</div>
+      <div id="processingList">Loading...</div>
+    </div>
+  `;
+
+  setupDropZone();
+  loadProcessingList();
+}
+
+let selectedFile = null;
+
+function handleFileSelect(e) {
+  selectedFile = e.target.files[0];
+  if (!selectedFile) return;
+  document.getElementById('uploadForm').style.display = 'block';
+  document.getElementById('selectedFile').textContent = `📄 ${selectedFile.name} (${(selectedFile.size/1024/1024).toFixed(1)} MB)`;
+  document.getElementById('docName').value = selectedFile.name.replace('.pdf','');
+}
+
+function setupDropZone() {
+  const dz = document.getElementById('dropZone');
+  if (!dz) return;
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f && f.name.endsWith('.pdf')) {
+      selectedFile = f;
+      document.getElementById('uploadForm').style.display = 'block';
+      document.getElementById('selectedFile').textContent = `📄 ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)`;
+      document.getElementById('docName').value = f.name.replace('.pdf','');
+    } else {
+      toast('Please drop a PDF file', 'error');
+    }
+  });
+}
+
+function cancelUpload() {
+  selectedFile = null;
+  document.getElementById('uploadForm').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+}
+
+async function doUpload() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  const name = document.getElementById('docName').value.trim();
+
+  try {
+    const url = name ? `/documents?name=${encodeURIComponent(name)}` : '/documents';
+    const res = await fetch(url, { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail);
+    
+    toast(`✓ Uploaded! Processing started for "${data.name}"`, 'success');
+    cancelUpload();
+    loadProcessingList();
+    startPolling(data.document_id, data.name);
+
+  } catch (e) {
+    toast(`Upload failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload & Process';
+  }
+}
+
+async function loadProcessingList() {
+  try {
+    const docs = await api('/documents');
+    const el = document.getElementById('processingList');
+    if (!el) return;
+    if (docs.length === 0) {
+      el.innerHTML = '<div style="color:var(--muted); font-size:13px; padding:8px 0;">No documents uploaded yet.</div>';
+      return;
+    }
+    el.innerHTML = docs.map(d => `
+      <div class="doc-item" style="cursor:default; margin-bottom:8px;">
+        <div style="font-size:24px">📄</div>
+        <div class="doc-info">
+          <div class="doc-name">${esc(d.name)}</div>
+          <div class="doc-meta">${d.page_count||'?'} pages · ${d.fact_count||0} facts extracted · ${d.chunk_count||0} chunks</div>
+          ${d.error_message ? `<div style="color:var(--red); font-size:12px; margin-top:4px;">${esc(d.error_message)}</div>` : ''}
+          ${d.status === 'processing' ? `<div class="progress-bar"><div class="progress-fill" style="width:70%"></div></div>` : ''}
+        </div>
+        ${statusBadge(d.status)}
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+function startPolling(docId, docName) {
+  if (pollingIntervals[docId]) clearInterval(pollingIntervals[docId]);
+  pollingIntervals[docId] = setInterval(async () => {
+    try {
+      const status = await api(`/documents/${docId}/status`);
+      loadProcessingList();
+      if (status.status === 'done') {
+        clearInterval(pollingIntervals[docId]);
+        toast(`✓ "${docName}" fully processed! ${status.fact_count} facts extracted.`, 'success');
+      } else if (status.status === 'error') {
+        clearInterval(pollingIntervals[docId]);
+        toast(`Error processing "${docName}": ${status.error_message}`, 'error');
+      }
+    } catch(e) {}
+  }, 3000);
+}
+
+// ── Facts browser ─────────────────────────────────────────────────────────────
+
+let factsOffset = 0;
+const FACTS_LIMIT = 30;
+
+async function renderFacts(params = {}) {
+  const { documentId, factType } = params;
+  factsOffset = 0;
+  
+  let docsOptions = '<option value="">All documents</option>';
+  try {
+    const docs = await api('/documents');
+    docs.forEach(d => {
+      docsOptions += `<option value="${d.id}" ${d.id === documentId ? 'selected' : ''}>${esc(d.name)}</option>`;
+    });
+  } catch(e) {}
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="section-header">
+      <div class="section-title">Browse Facts</div>
+      <span class="section-count" id="factsCount"></span>
+    </div>
+
+    <div class="filter-bar">
+      <select class="filter-input" id="filterDoc" onchange="loadFacts()">
+        ${docsOptions}
+      </select>
+      <input type="text" class="filter-input" id="filterSubject" placeholder="Search by subject..." oninput="debounce(loadFacts, 400)()" />
+      <select class="filter-input" id="filterType" onchange="loadFacts()">
+        <option value="">All fact types</option>
+        <option value="economic_indicator">Economic indicator</option>
+        <option value="monetary_policy">Monetary policy</option>
+        <option value="fiscal_policy">Fiscal policy</option>
+        <option value="trade_statistic">Trade statistic</option>
+        <option value="financial_market">Financial market</option>
+        <option value="demographic">Demographic</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Claim</th>
+            <th>Subject</th>
+            <th>Value</th>
+            <th>Period</th>
+            <th>Source</th>
+            <th>Page</th>
+            <th>Type</th>
+            <th>Conf</th>
+          </tr>
+        </thead>
+        <tbody id="factsTable"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="page-btn" id="prevBtn" onclick="changePage(-1)" disabled>← Prev</button>
+      <span id="pageInfo" style="font-size:12px; color:var(--muted)"></span>
+      <button class="page-btn" id="nextBtn" onclick="changePage(1)">Next →</button>
+    </div>
+  `;
+
+  if (factType) {
+    const sel = document.getElementById('filterType');
+    if (sel) sel.value = factType;
+  }
+
+  await loadFacts();
+}
+
+async function loadFacts() {
+  const docId = document.getElementById('filterDoc')?.value;
+  const subject = document.getElementById('filterSubject')?.value;
+  const factType = document.getElementById('filterType')?.value;
+
+  let url = `/facts?limit=${FACTS_LIMIT}&offset=${factsOffset}`;
+  if (docId) url += `&document_id=${docId}`;
+  if (subject) url += `&subject=${encodeURIComponent(subject)}`;
+  if (factType) url += `&fact_type=${factType}`;
+
+  const tbody = document.getElementById('factsTable');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:var(--muted)"><div class="spinner"></div></td></tr>';
+
+  try {
+    const facts = await api(url);
+    if (facts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty" style="padding:40px"><div class="empty-icon">📋</div><div class="empty-title">No facts found</div></td></tr>';
+    } else {
+      tbody.innerHTML = facts.map(f => `
+        <tr style="cursor:pointer" onclick="navigate('fact_detail', { factId: '${f.id}' })">
+          <td class="claim-text">${esc(f.claim)}</td>
+          <td><span class="truncate" style="display:block">${esc(f.subject||'—')}</span></td>
+          <td><strong>${esc(f.value||'—')}</strong></td>
+          <td>${esc(f.time_scope||'—')}</td>
+          <td style="font-size:12px; color:var(--muted)">${esc(f.document_name)}</td>
+          <td style="text-align:center">${f.page_number||'?'}</td>
+          <td><span class="tag">${esc(f.fact_type||'?')}</span></td>
+          <td>${f.confidence ? (f.confidence*100).toFixed(0)+'%' : '?'}</td>
+        </tr>
+      `).join('');
+    }
+
+    const count = document.getElementById('factsCount');
+    if (count) count.textContent = `${facts.length} facts (page ${Math.floor(factsOffset/FACTS_LIMIT)+1})`;
+
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    if (prevBtn) prevBtn.disabled = factsOffset === 0;
+    if (nextBtn) nextBtn.disabled = facts.length < FACTS_LIMIT;
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red)">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function changePage(dir) {
+  factsOffset = Math.max(0, factsOffset + dir * FACTS_LIMIT);
+  loadFacts();
+}
+
+// ── Fact detail ───────────────────────────────────────────────────────────────
+
+async function renderFactDetail(factId) {
+  try {
+    const [fact, rels] = await Promise.all([
+      api(`/facts/${factId}`),
+      api(`/facts/${factId}/relationships`),
+    ]);
+
+    const nonUnrelated = rels.filter(r => r.relation !== 'UNRELATED');
+
+    document.getElementById('mainContent').innerHTML = `
+      <div style="margin-bottom:16px;">
+        <button class="btn btn-secondary" onclick="history.back()">← Back</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">${esc(fact.claim)}</div>
+          <span class="tag">${esc(fact.fact_type||'unknown')}</span>
+        </div>
+
+        <div class="meta-row">
+          <div class="meta-item">
+            <span class="meta-label">Source</span>
+            <span class="meta-value">📄 ${esc(fact.document_name)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Page</span>
+            <span class="meta-value">${fact.page_number||'?'}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Subject</span>
+            <span class="meta-value">${esc(fact.subject||'—')}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Value</span>
+            <span class="meta-value"><strong>${esc(fact.value||'—')}</strong></span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Time Period</span>
+            <span class="meta-value">${esc(fact.time_scope||'—')}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Confidence</span>
+            <span class="meta-value">${fact.confidence ? (fact.confidence*100).toFixed(0)+'%' : '?'}</span>
+          </div>
+        </div>
+
+        ${fact.quote ? `
+          <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">Verbatim supporting quote:</div>
+          <div class="quote-box">"${esc(fact.quote)}"</div>
+        ` : ''}
+
+        ${fact.extraction_notes ? `
+          <div class="notes-box">⚠️ Extraction note: ${esc(fact.extraction_notes)}</div>
+        ` : ''}
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">Related Facts</div>
+        <span class="section-count">${nonUnrelated.length} significant relationships</span>
+      </div>
+
+      ${nonUnrelated.length === 0 ? `
+        <div class="empty">
+          <div class="empty-icon">🔗</div>
+          <div class="empty-title">No significant relationships found</div>
+          <p>This fact has no corroborations, contradictions, or reconcilable differences with facts from other documents.</p>
+        </div>
+      ` : nonUnrelated.map(rel => renderRelCard(fact, rel)).join('')}
+
+      ${rels.filter(r=>r.relation==='UNRELATED').length > 0 ? `
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer; color:var(--muted); font-size:13px; margin-bottom:8px;">
+            Show ${rels.filter(r=>r.relation==='UNRELATED').length} unrelated candidates (filtered out)
+          </summary>
+          ${rels.filter(r=>r.relation==='UNRELATED').map(rel => renderRelCard(fact, rel)).join('')}
+        </details>
+      ` : ''}
+    `;
+  } catch(e) {
+    document.getElementById('mainContent').innerHTML = `<div style="color:var(--red)">Error loading fact: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderRelCard(thisFact, rel) {
+  const other = rel.other_fact;
+  const basisTags = (rel.explanation_basis || []).map(b => `<span class="tag">${esc(b)}</span>`).join('');
+  const simScore = rel.similarity_score ? ` · sim ${(rel.similarity_score*100).toFixed(0)}%` : '';
+  
+  return `
+    <div class="rel-card">
+      <div class="rel-header">
+        ${relBadge(rel.relation)}
+        <span style="font-size:12px; color:var(--muted)">${simScore}</span>
+        <div style="flex:1"></div>
+        ${basisTags}
+      </div>
+      <div class="rel-explanation">${esc(rel.explanation||'No explanation provided.')}</div>
+      <div class="rel-facts">
+        <div class="rel-fact-box">
+          <div class="rel-fact-source">📄 ${esc(thisFact.document_name)} · page ${thisFact.page_number||'?'}</div>
+          <div class="rel-fact-claim">${esc(thisFact.claim)}</div>
+          ${thisFact.quote ? `<div class="rel-fact-quote">"${esc(thisFact.quote)}"</div>` : ''}
+        </div>
+        <div class="rel-fact-box" style="cursor:pointer" onclick="navigate('fact_detail', { factId: '${other?.id}' })">
+          <div class="rel-fact-source">📄 ${esc(other?.document_name||'?')} · page ${other?.page_number||'?'}</div>
+          <div class="rel-fact-claim">${esc(other?.claim||'—')}</div>
+          ${other?.quote ? `<div class="rel-fact-quote">"${esc(other.quote)}"</div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── Relationships browser ────────────────────────────────────────────────────
+
+let relsOffset = 0;
+const RELS_LIMIT = 20;
+
+async function renderRelationships(params = {}) {
+  relsOffset = 0;
+
+  document.getElementById('mainContent').innerHTML = `
+    <div class="section-header">
+      <div class="section-title">Browse Relationships</div>
+      <span class="section-count" id="relsCount"></span>
+    </div>
+
+    <div class="filter-bar">
+      <select class="filter-input" id="filterRelType" onchange="loadRelationships()">
+        <option value="">All types</option>
+        <option value="CORROBORATES">Corroborates</option>
+        <option value="CONTRADICTS">Contradicts</option>
+        <option value="RECONCILABLE">Reconcilable</option>
+        <option value="UNRELATED">Unrelated</option>
+      </select>
+    </div>
+
+    <div id="relsContainer">Loading...</div>
+
+    <div class="pagination">
+      <button class="page-btn" id="relsPrevBtn" onclick="changeRelsPage(-1)" disabled>← Prev</button>
+      <button class="page-btn" id="relsNextBtn" onclick="changeRelsPage(1)">Next →</button>
+    </div>
+  `;
+
+  if (params.type) {
+    const sel = document.getElementById('filterRelType');
+    if (sel) sel.value = params.type;
+  }
+
+  await loadRelationships();
+}
+
+async function loadRelationships() {
+  const relType = document.getElementById('filterRelType')?.value;
+  let url = `/relationships?limit=${RELS_LIMIT}&offset=${relsOffset}`;
+  if (relType) url += `&type=${relType}`;
+
+  const container = document.getElementById('relsContainer');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center; padding:20px"><div class="spinner"></div></div>';
+
+  try {
+    const rels = await api(url);
+    const count = document.getElementById('relsCount');
+    if (count) count.textContent = `${rels.length} relationships shown`;
+
+    if (rels.length === 0) {
+      container.innerHTML = '<div class="empty"><div class="empty-icon">🔗</div><div class="empty-title">No relationships found</div><p>Upload multiple PDFs to see cross-document relationships.</p></div>';
+    } else {
+      container.innerHTML = rels.map(rel => `
+        <div class="rel-card">
+          <div class="rel-header">
+            ${relBadge(rel.relation)}
+            ${rel.similarity_score ? `<span style="font-size:12px; color:var(--muted)">sim ${(rel.similarity_score*100).toFixed(0)}%</span>` : ''}
+            <div style="flex:1"></div>
+            ${(rel.explanation_basis||[]).map(b => `<span class="tag">${esc(b)}</span>`).join('')}
+          </div>
+          <div class="rel-explanation">${esc(rel.explanation||'')}</div>
+          <div class="rel-facts">
+            <div class="rel-fact-box" style="cursor:pointer" onclick="navigate('fact_detail', { factId: '${rel.fact_a?.id}' })">
+              <div class="rel-fact-source">📄 ${esc(rel.fact_a?.document_name||'?')} · p.${rel.fact_a?.page_number||'?'}</div>
+              <div class="rel-fact-claim">${esc(rel.fact_a?.claim||'—')}</div>
+              ${rel.fact_a?.quote ? `<div class="rel-fact-quote">"${esc(rel.fact_a.quote)}"</div>` : ''}
+            </div>
+            <div class="rel-fact-box" style="cursor:pointer" onclick="navigate('fact_detail', { factId: '${rel.fact_b?.id}' })">
+              <div class="rel-fact-source">📄 ${esc(rel.fact_b?.document_name||'?')} · p.${rel.fact_b?.page_number||'?'}</div>
+              <div class="rel-fact-claim">${esc(rel.fact_b?.claim||'—')}</div>
+              ${rel.fact_b?.quote ? `<div class="rel-fact-quote">"${esc(rel.fact_b.quote)}"</div>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('relsPrevBtn').disabled = relsOffset === 0;
+    document.getElementById('relsNextBtn').disabled = rels.length < RELS_LIMIT;
+  } catch(e) {
+    container.innerHTML = `<div style="color:var(--red)">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function changeRelsPage(dir) {
+  relsOffset = Math.max(0, relsOffset + dir * RELS_LIMIT);
+  loadRelationships();
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function debounce(fn, delay) {
+  let timer;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+navigate('dashboard');
+</script>
+</body>
+</html>
