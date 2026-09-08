@@ -238,3 +238,6 @@ Faster settings: increase `MAX_CONCURRENT_EXTRACTIONS` to 10, reduce `TOP_K_CAND
 - The `data/` directory (SQLite + ChromaDB) is gitignored.
 - Sample PDFs can be downloaded with `python download_samples.py`.
 - The system is stateless per request; all state lives in SQLite + ChromaDB in `data/`.
+
+## video demo
+-https://drive.google.com/file/d/18D1l1Fdr129wOWCXnQSFeECLxzUka0B9/view?usp=sharing
