@@ -186,7 +186,7 @@ Before submission, a 4th PDF (e.g. World Bank India Economic Monitor, or any pub
 
 ---
 
-## Trade-offs & Limitations
+##  Limitations & next steps
 
 ### Trade-offs
 
